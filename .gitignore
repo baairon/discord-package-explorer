@@ -1,0 +1,12 @@
+node_modules/
+viewer/node_modules/
+dist/
+viewer/dist/
+*.tsbuildinfo
+*.log
+.env
+.env.*
+*.zip
+viewer/demo-source/*
+!viewer/demo-source/.gitkeep
+viewer/public/demo-snapshot.json

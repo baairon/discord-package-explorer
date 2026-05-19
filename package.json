@@ -1,0 +1,10 @@
+{
+  "name": "package-root",
+  "private": true,
+  "scripts": {
+    "setup": "npm --prefix viewer install --no-audit --no-fund",
+    "dev": "npm run setup --silent && npm --prefix viewer run dev",
+    "build": "npm run setup --silent && npm --prefix viewer run build",
+    "preview": "npm run setup --silent && node viewer/scripts/preview.mjs"
+  }
+}
