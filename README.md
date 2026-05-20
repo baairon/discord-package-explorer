@@ -2,7 +2,7 @@
 
 Discord lets you download all of your data, but it arrives as a ZIP of CSVs and JSON files. This app opens that ZIP in your browser and turns it into a viewer: every conversation in a sidebar, every photo and video in a gallery, full-text search, and a stats page.
 
-![Preview](https://raw.githubusercontent.com/baairon/discord-package-explorer/main/previews/image.png)
+![Preview](https://github.com/baairon/discord-package-explorer/blob/main/previews/image.png?raw=true)
 
 *The share card you get from the Stats page.*
 
