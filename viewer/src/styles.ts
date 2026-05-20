@@ -1018,7 +1018,7 @@ a { color: inherit; }
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
   pointer-events: none;
 }
-.msg-link { color: var(--accent); text-decoration: none; }
+.msg-link { color: #5885db; text-decoration: none; }
 .msg-link:hover { text-decoration: underline; }
 .mention {
   color: #94a8ff;
