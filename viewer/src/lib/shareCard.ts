@@ -1392,7 +1392,7 @@ function drawPortraitActivity(ctx: CanvasRenderingContext2D, dailyCounts: Map<st
 
   drawActivityChart(ctx, dailyCounts, peakMs, peakCount, {
     chartLeft, chartRight, chartTop, chartBottom,
-    tickFontSize: 28, lineWidth: 6, peakDotR: 11, peakDotStrokeWidth: 4, peakDashWidth: 2.4,
+    tickFontSize: 28, lineWidth: 4, peakDotR: 9, peakDotStrokeWidth: 3, peakDashWidth: 1.8,
     bucketCount: 80, smoothingWindow: 21
   });
 }

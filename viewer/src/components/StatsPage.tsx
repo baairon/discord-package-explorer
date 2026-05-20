@@ -254,7 +254,8 @@ function DailyTimeline({
     maxCount,
     totalDays,
     points,
-    peakBucket
+    peakBucket,
+    startUTC
   } = useMemo(() => {
     let minMs = Infinity;
     let maxMs = -Infinity;
@@ -273,7 +274,8 @@ function DailyTimeline({
         maxCount: 1,
         totalDays: 1,
         points: [[0, TIMELINE_H - TIMELINE_PAD], [TIMELINE_W, TIMELINE_H - TIMELINE_PAD]] as [number, number][],
-        peakBucket: 0
+        peakBucket: 0,
+        startUTC: 0
       };
     }
     if (maxCount === 0) maxCount = 1;
@@ -370,7 +372,7 @@ function DailyTimeline({
       points.push([TIMELINE_W, points[0][1]]);
     }
 
-    return { barIndex, ticks, maxCount, totalDays, points, peakBucket };
+    return { barIndex, ticks, maxCount, totalDays, points, peakBucket, startUTC };
   }, [dailyCounts, isMobile]);
 
   const { areaD, lineD } = useMemo(() => buildSmoothPath(points), [points]);
@@ -378,7 +380,7 @@ function DailyTimeline({
   const peakX = points[peakBucket]?.[0] ?? 0;
   const peakY = points[peakBucket]?.[1] ?? TIMELINE_PAD;
 
-  const [hover, setHover] = useState<{ date: string; v: number } | null>(null);
+  const [hover, setHover] = useState<{ date: string; v: number; x: number; y: number } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const probeAt = useCallback((clientX: number) => {
     const el = svgRef.current;
@@ -390,33 +392,38 @@ function DailyTimeline({
       setHover(null);
       return;
     }
+    const x = Math.min(TIMELINE_W, Math.max(0, ratio * TIMELINE_W));
+    const pointDenom = Math.max(1, points.length - 1);
+    const pointIndex = Math.min(points.length - 1, Math.max(0, Math.round((x / TIMELINE_W) * pointDenom)));
+    const [pointX, pointY] = points[pointIndex] ?? [x, TIMELINE_H - TIMELINE_PAD];
     const dayIndex = Math.min(totalDays - 1, Math.max(0, Math.floor(ratio * totalDays)));
     const b = barIndex.get(dayIndex);
-    if (!b) {
-      setHover(null);
-      return;
-    }
-    setHover({ date: b.date, v: b.v });
-  }, [barIndex, totalDays]);
+    const dayMs = startUTC + dayIndex * 86_400_000;
+    const date = b?.date ?? dayKeyFromUTC(dayMs);
+    setHover({ date, v: b?.v ?? 0, x: pointX, y: pointY });
+  }, [barIndex, points, startUTC, totalDays]);
+  const clearHover = useCallback(() => setHover(null), []);
+  const markerX = hover?.x ?? peakX;
+  const markerY = hover?.y ?? peakY;
 
   return <div className="stats-tile stats-timeline">
       <div className="stats-timeline-chart">
-        <svg ref={svgRef} className="stats-timeline-svg" viewBox={`0 0 ${TIMELINE_W} ${TIMELINE_H}`} preserveAspectRatio="none" onPointerDown={e => probeAt(e.clientX)} onPointerMove={e => probeAt(e.clientX)} onPointerLeave={() => setHover(null)} onPointerCancel={() => setHover(null)}>
+        <svg ref={svgRef} className="stats-timeline-svg" viewBox={`0 0 ${TIMELINE_W} ${TIMELINE_H}`} preserveAspectRatio="none" onPointerDown={e => probeAt(e.clientX)} onPointerMove={e => probeAt(e.clientX)} onPointerLeave={clearHover} onPointerCancel={clearHover} onLostPointerCapture={clearHover}>
           <g className="stats-timeline-grid">
             {ticks.map((t, i) => i === 0 ? null : <line key={t.label} x1={(t.x / Math.max(1, totalDays - 1)) * TIMELINE_W} x2={(t.x / Math.max(1, totalDays - 1)) * TIMELINE_W} y1={0} y2={TIMELINE_H} />)}
           </g>
           <path d={areaD} fill="var(--accent)" fillOpacity={0.18} />
-          <path d={lineD} fill="none" stroke="var(--accent)" strokeWidth={1.75} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+          <path d={lineD} fill="none" stroke="var(--accent)" strokeWidth={isMobile ? 1.15 : 1.75} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         </svg>
         {maxCount > 0 && totalDays > 1 && <>
             <div className="stats-timeline-peak-line" style={{
-              left: `${(peakX / TIMELINE_W) * 100}%`,
-              top: `${(peakY / TIMELINE_H) * 100}%`,
-              height: `${(1 - peakY / TIMELINE_H) * 100}%`
+              left: `${(markerX / TIMELINE_W) * 100}%`,
+              top: `${(markerY / TIMELINE_H) * 100}%`,
+              height: `${(1 - markerY / TIMELINE_H) * 100}%`
             }} />
             <div className="stats-timeline-peak-dot" style={{
-              left: `${(peakX / TIMELINE_W) * 100}%`,
-              top: `${(peakY / TIMELINE_H) * 100}%`
+              left: `${(markerX / TIMELINE_W) * 100}%`,
+              top: `${(markerY / TIMELINE_H) * 100}%`
             }} />
           </>}
       </div>
@@ -510,6 +517,13 @@ function formatHour(h: number): string {
 function formatDayKey(key: string): string {
   const [y, m, d] = key.split("-").map(Number);
   return formatShortDate(Date.UTC(y, m - 1, d));
+}
+function dayKeyFromUTC(ms: number): string {
+  const date = new Date(ms);
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 const compactFormatter = new Intl.NumberFormat(undefined, {
   notation: "compact",
