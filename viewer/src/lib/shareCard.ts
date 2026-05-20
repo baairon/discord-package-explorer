@@ -426,9 +426,9 @@ function drawHeroTile(ctx: CanvasRenderingContext2D, d: ShareCardData) {
     );
   }
 
-  const valueFontSize = 78;
+  const valueFontSize = 64;
   const valueBaseline = showCaption
-    ? captionBaseline - captionFontSize - 8
+    ? captionBaseline - captionFontSize - 24
     : y + h - HERO_PAD_Y;
 
   setLetterSpacing(ctx, "-3px");
@@ -800,13 +800,24 @@ function drawActivityChart(
   const startYear = new Date(minMs).getUTCFullYear();
   const endYear = new Date(maxMs).getUTCFullYear();
   const yearTicks: Array<{ x: number; label: string }> = [];
+  const MIN_TICK_GAP_PX = 8;
+  const prevFont = ctx.font;
+  ctx.font = `500 ${r.tickFontSize}px ${FONT}`;
+  const labelW = ctx.measureText("0000").width;
+  ctx.font = prevFont;
   for (let y = startYear; y <= endYear; y++) {
     const yMs = Date.UTC(y, 0, 1);
-    if (yMs < minMs || yMs > maxMs) {
-      if (y === startYear) yearTicks.push({ x: chartLeft, label: String(startYear) });
-      continue;
+    const beforeRange = yMs < minMs || yMs > maxMs;
+    if (beforeRange && y !== startYear) continue;
+    const isFirstCandidate = yearTicks.length === 0;
+    const tx = beforeRange ? chartLeft : chartLeft + ((yMs - minMs) / span) * chartW;
+    const candidateLeft = isFirstCandidate ? tx : tx - labelW / 2;
+    if (!isFirstCandidate) {
+      const prev = yearTicks[yearTicks.length - 1];
+      const prevIsFirst = yearTicks.length === 1;
+      const prevRight = prevIsFirst ? prev.x + labelW : prev.x + labelW / 2;
+      if (candidateLeft - prevRight < MIN_TICK_GAP_PX) continue;
     }
-    const tx = chartLeft + ((yMs - minMs) / span) * chartW;
     yearTicks.push({ x: tx, label: String(y) });
   }
   if (yearTicks.length === 0) yearTicks.push({ x: chartLeft, label: String(startYear) });

@@ -1,8 +1,8 @@
 # Discord Package Explorer 🔍
 
-Your Discord data export, finally readable. Browse every conversation, scroll years of photos, and see the patterns hiding in your message history.
+Discord lets you download all of your data, but it arrives as a ZIP of CSVs and JSON files. This app opens that ZIP in your browser and turns it into a viewer: every conversation in a sidebar, every photo and video in a gallery, full-text search, and a stats page.
 
-![Preview](previews/image.png)
+![Preview](https://raw.githubusercontent.com/baairon/discord-package-explorer/main/previews/image.png)
 
 *The share card you get from the Stats page.*
 
