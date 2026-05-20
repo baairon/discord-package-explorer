@@ -8,7 +8,6 @@ import { MobileNav, type MobileNavTab } from "./components/MobileNav";
 import { GitHubIcon } from "./components/icons";
 import { CSS } from "./styles";
 import { paneSwapVariants } from "./lib/motion";
-import { loadDemoSnapshot } from "./lib/demoLoader";
 import type { IngestResult } from "./ingest/types";
 export default function App() {
   const [data, setData] = useState<IngestResult | null>(null);
@@ -19,7 +18,6 @@ export default function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("dms");
-  const [demoLoading, setDemoLoading] = useState(import.meta.env.VITE_DEMO === "1");
   const onIngested = useCallback((result: IngestResult) => {
     setData(prev => {
       if (prev?.ownerAvatarBlobUrl) URL.revokeObjectURL(prev.ownerAvatarBlobUrl);
@@ -33,20 +31,6 @@ export default function App() {
     setStatsOpen(false);
     setSidebarTab("dms");
   }, []);
-  useEffect(() => {
-    if (import.meta.env.VITE_DEMO !== "1") return;
-    let cancelled = false;
-    loadDemoSnapshot().then(result => {
-      if (!cancelled) onIngested(result);
-    }).catch(err => {
-      console.error("Failed to load demo snapshot:", err);
-    }).finally(() => {
-      if (!cancelled) setDemoLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [onIngested]);
   useEffect(() => {
     setGalleryOpen(false);
   }, [selectedId]);
@@ -124,7 +108,7 @@ export default function App() {
               </m.div>}
           </AnimatePresence>
           <MobileNav active={mobileNavActive} onSelect={handleMobileNav} />
-        </div> : demoLoading ? null : <>
+        </div> : <>
           <DropZone onIngested={onIngested} />
           <div className="corner-links">
             <a className="corner-link" href="https://github.com/baairon/discord-package-explorer" target="_blank" rel="noreferrer" aria-label="GitHub repository" title="GitHub repository">

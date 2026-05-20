@@ -208,16 +208,13 @@ export function MessagePane({
             </div>
             <div className="pane-empty-title">No messages here</div>
           </div>}
-        {messages.length > 0 && <div className="message-list" style={{
-        display: galleryOpen ? "none" : "flex"
-      }}>
+        <div className="pane-views">
+          {messages.length > 0 && <div className="message-list" data-active={!galleryOpen}>
             <Virtuoso ref={virtuosoRef} data={messages} followOutput="auto" initialTopMostItemIndex={messages.length - 1} increaseViewportBy={400} itemContent={itemContent} components={{
         Footer: () => <TimelineEndFooter lastTimestamp={messages[messages.length - 1]?.timestamp} />
       }} />
           </div>}
-        {hasMedia && <div className="gallery" style={{
-        display: galleryOpen ? "flex" : "none"
-      }}>
+          {hasMedia && <div className="gallery" data-active={galleryOpen}>
             <div className="media-toggle">
               <button type="button" className={`chip${mediaMode === "all" ? " active" : ""}`} onClick={() => setMediaMode("all")}>
                 All ({allGalleryItems.length})
@@ -237,6 +234,7 @@ export function MessagePane({
           })} />)}
               </div>}
           </div>}
+        </div>
         <AnimatePresence>
           {lightboxState && lightboxState.items[lightboxState.index] && <MediaLightbox key="lightbox" items={lightboxState.items} index={lightboxState.index} participantsById={participantsById} manifest={manifest} showJumpTo={lightboxState.showJumpTo} onClose={() => setLightboxState(null)} onIndex={next => setLightboxState(prev => prev ? {
           ...prev,
