@@ -168,10 +168,17 @@ function fmtETA(seconds: number): string {
   return `${Math.round(seconds / 3600)}h`;
 }
 const TEXT = new TextDecoder("utf-8");
-const ACCOUNT_USER = "Account/user.json";
-const ACCOUNT_AVATAR = "Account/avatar.jpeg";
-const MESSAGES_INDEX = "Messages/index.json";
-const CHANNEL_DIR_RX = /^Messages\/(c[^/]+)\/(channel|messages)\.json$/;
+// Discord export folder names are localized (e.g. "Account" becomes "Compte"
+// in French), but the filenames underneath them and the "c<channelId>"
+// channel directory naming are stable across locales. classifyEntry only
+// extracts a (root, kind) pair from the path shape — it never decides which
+// root "wins". That decision is made once, deterministically, after the
+// whole archive has been read (see selectAccountRoot/selectMessagesRoot in
+// runIngest), so it can never depend on the order entries appear in the ZIP.
+const USER_JSON_RX = /^([^/]+)\/user\.json$/;
+const AVATAR_JSON_RX = /^([^/]+)\/avatar\.jpe?g$/i;
+const INDEX_JSON_RX = /^([^/]+)\/index\.json$/;
+const CHANNEL_DIR_RX = /^([^/]+)\/(c[^/]+)\/(channel|messages)\.json$/;
 const ACTIVITY_RX = /^Activity\/(analytics|reporting|messaging|modeling)\/.+\.json$/i;
 function normalizeName(name: string): string {
   return name.replace(/\\/g, "/");
@@ -179,30 +186,53 @@ function normalizeName(name: string): string {
 type EntryKind = {
   kind: "skip";
 } | {
-  kind: "small";
-  name: string;
+  kind: "account-file";
+  root: string;
+  file: "user" | "avatar";
+} | {
+  kind: "messages-index";
+  root: string;
+} | {
+  kind: "channel";
+  root: string;
+  dir: string;
+  part: "channel" | "messages";
 } | {
   kind: "activity";
   name: string;
-} | {
-  kind: "channel";
-  dir: string;
-  part: "channel" | "messages";
 };
 function classifyEntry(rawName: string): EntryKind {
   const name = normalizeName(rawName);
-  if (name === ACCOUNT_USER || name === ACCOUNT_AVATAR || name === MESSAGES_INDEX) {
+  const userM = USER_JSON_RX.exec(name);
+  if (userM) {
     return {
-      kind: "small",
-      name
+      kind: "account-file",
+      root: userM[1],
+      file: "user"
     };
   }
-  const m = CHANNEL_DIR_RX.exec(name);
-  if (m) {
+  const avatarM = AVATAR_JSON_RX.exec(name);
+  if (avatarM) {
+    return {
+      kind: "account-file",
+      root: avatarM[1],
+      file: "avatar"
+    };
+  }
+  const chanM = CHANNEL_DIR_RX.exec(name);
+  if (chanM) {
     return {
       kind: "channel",
-      dir: m[1],
-      part: m[2] as "channel" | "messages"
+      root: chanM[1],
+      dir: chanM[2],
+      part: chanM[3] as "channel" | "messages"
+    };
+  }
+  const indexM = INDEX_JSON_RX.exec(name);
+  if (indexM) {
+    return {
+      kind: "messages-index",
+      root: indexM[1]
     };
   }
   if (ACTIVITY_RX.test(name)) {
@@ -418,6 +448,18 @@ interface SmallFiles {
 interface ChannelPair {
   channel?: Uint8Array;
 }
+// Data is collected per candidate root while the ZIP is read, and a single
+// root is picked deterministically only after the full archive has been
+// seen — see selectAccountRoot/selectMessagesRoot in runIngest.
+interface AccountRootCandidate {
+  user?: Uint8Array;
+  avatar?: Uint8Array;
+}
+interface MessagesRootCandidate {
+  index?: Uint8Array;
+  channelPairs: Map<string, ChannelPair>;
+  messagesByDir: Map<string, Message[]>;
+}
 function bufferStream(stream: UnzipFile, onDone: (buf: Uint8Array) => void, onError: (e: Error) => void): void {
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -447,8 +489,27 @@ function post(msg: WorkerOutbound): void {
 }
 async function runIngest(file: File): Promise<void> {
   const small: SmallFiles = {};
-  const channelPairs = new Map<string, ChannelPair>();
-  const messagesByDir = new Map<string, Message[]>();
+  const accountCandidates = new Map<string, AccountRootCandidate>();
+  const messagesCandidates = new Map<string, MessagesRootCandidate>();
+  function getAccountCandidate(root: string): AccountRootCandidate {
+    let c = accountCandidates.get(root);
+    if (!c) {
+      c = {};
+      accountCandidates.set(root, c);
+    }
+    return c;
+  }
+  function getMessagesCandidate(root: string): MessagesRootCandidate {
+    let c = messagesCandidates.get(root);
+    if (!c) {
+      c = {
+        channelPairs: new Map(),
+        messagesByDir: new Map()
+      };
+      messagesCandidates.set(root, c);
+    }
+    return c;
+  }
   const authorByMessageId = new Map<string, string>();
   let ownerIdEarly: string | null = null;
   const activityScanners = new Map<string, ActivityScanner>();
@@ -489,22 +550,28 @@ async function runIngest(file: File): Promise<void> {
   const unzipper = new Unzip((stream: UnzipFile) => {
     const klass = classifyEntry(stream.name);
     if (klass.kind === "skip") return;
-    if (klass.kind === "small") {
+    if (klass.kind === "account-file") {
       bufferStream(stream, buf => {
-        if (klass.name === ACCOUNT_USER) {
-          small.user = buf;
-          resolveOwnerIfPossible();
-        } else if (klass.name === ACCOUNT_AVATAR) {
-          small.avatar = buf;
-        } else if (klass.name === MESSAGES_INDEX) {
-          small.index = buf;
+        const cand = getAccountCandidate(klass.root);
+        if (klass.file === "user") {
+          if (!cand.user) cand.user = buf;
+        } else if (!cand.avatar) {
+          cand.avatar = buf;
         }
       }, ABORT);
       return;
     }
+    if (klass.kind === "messages-index") {
+      bufferStream(stream, buf => {
+        const cand = getMessagesCandidate(klass.root);
+        if (!cand.index) cand.index = buf;
+      }, ABORT);
+      return;
+    }
     if (klass.kind === "channel") {
-      const pair = channelPairs.get(klass.dir) ?? {};
-      channelPairs.set(klass.dir, pair);
+      const cand = getMessagesCandidate(klass.root);
+      const pair = cand.channelPairs.get(klass.dir) ?? {};
+      cand.channelPairs.set(klass.dir, pair);
       if (klass.part === "channel") {
         bufferStream(stream, buf => {
           pair.channel = buf;
@@ -519,7 +586,7 @@ async function runIngest(file: File): Promise<void> {
         }
         scanner.feed(chunk ?? new Uint8Array(0), !!final);
         if (final) {
-          messagesByDir.set(klass.dir, scanner.messages());
+          cand.messagesByDir.set(klass.dir, scanner.messages());
         }
       };
       stream.start();
@@ -598,8 +665,63 @@ async function runIngest(file: File): Promise<void> {
       pct: 84
     }
   });
+  // Deterministic, order-independent root selection: pick a single account
+  // root and a single messages root from everything collected above, then
+  // only ever read files that belong to those exact roots. The literal
+  // English "Account"/"Messages" roots always win when present, regardless
+  // of what else was seen or in what order.
+  function hasCredibleMessagesRoot(): boolean {
+    for (const c of messagesCandidates.values()) {
+      if (c.channelPairs.size > 0) return true;
+    }
+    return false;
+  }
+  function selectAccountRoot(): string {
+    const historical = accountCandidates.get("Account");
+    if (historical?.user) return "Account";
+    // A user.json under a non-historical (localized) root is a much weaker
+    // signal on its own than "Account/user.json" — a path shape match alone
+    // could be any unrelated ZIP. Only trust it once the archive also has a
+    // credible messages root (real channel folders), which a genuine
+    // Discord export always has alongside its account data.
+    if (!hasCredibleMessagesRoot()) {
+      throw new Error("This doesn't look like a Discord export (no user.json found).");
+    }
+    const withUser = [...accountCandidates.entries()].filter(([, c]) => c.user).map(([root]) => root);
+    if (withUser.length === 0) {
+      throw new Error("This doesn't look like a Discord export (no user.json found).");
+    }
+    if (withUser.length > 1) {
+      throw new Error(`Found multiple candidate account folders (${withUser.join(", ")}) — can't tell which one holds your Discord account data.`);
+    }
+    return withUser[0];
+  }
+  function selectMessagesRoot(): string | null {
+    const historical = messagesCandidates.get("Messages");
+    if (historical && historical.channelPairs.size > 0) return "Messages";
+    const withChannels = [...messagesCandidates.entries()].filter(([root, c]) => root !== "Messages" && c.channelPairs.size > 0).map(([root]) => root);
+    if (withChannels.length === 1) return withChannels[0];
+    if (withChannels.length > 1) {
+      throw new Error(`Found multiple candidate message folders (${withChannels.join(", ")}) — can't tell which one holds your Discord messages.`);
+    }
+    // Nobody has channel data. Preserve historical behavior: if a literal
+    // "Messages" folder exists at all (e.g. just an index.json so far),
+    // still resolve to it so that index.json can load.
+    if (historical) return "Messages";
+    return null;
+  }
+  const accountRoot = selectAccountRoot();
+  const accountCand = accountCandidates.get(accountRoot)!;
+  small.user = accountCand.user;
+  small.avatar = accountCand.avatar;
+  resolveOwnerIfPossible();
+  const messagesRoot = selectMessagesRoot();
+  const messagesCand = messagesRoot ? messagesCandidates.get(messagesRoot) : undefined;
+  small.index = messagesCand?.index;
+  const channelPairs = messagesCand?.channelPairs ?? new Map<string, ChannelPair>();
+  const messagesByDir = messagesCand?.messagesByDir ?? new Map<string, Message[]>();
   if (!small.user) {
-    throw new Error("This doesn't look like a Discord export (no Account/user.json).");
+    throw new Error("This doesn't look like a Discord export (no user.json found).");
   }
   let userJson: {
     id?: string;
@@ -609,7 +731,7 @@ async function runIngest(file: File): Promise<void> {
   try {
     userJson = JSON.parse(TEXT.decode(small.user)) as typeof userJson;
   } catch {
-    throw new Error("Account/user.json is malformed");
+    throw new Error("user.json is malformed");
   }
   const ownerId = userJson.id ?? "unknown";
   const ownerUsername = userJson.username ?? "unknown";
