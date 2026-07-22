@@ -176,7 +176,8 @@ const TEXT = new TextDecoder("utf-8");
 // whole archive has been read (see selectAccountRoot/selectMessagesRoot in
 // runIngest), so it can never depend on the order entries appear in the ZIP.
 const USER_JSON_RX = /^([^/]+)\/user\.json$/;
-const AVATAR_JSON_RX = /^([^/]+)\/avatar\.jpe?g$/i;
+const AVATAR_FILE_RX = /^([^/]+)\/avatar\.(?:jpe?g|png)$/i;
+const AVATAR_PNG_RX = /\.png$/i;
 const INDEX_JSON_RX = /^([^/]+)\/index\.json$/;
 const CHANNEL_DIR_RX = /^([^/]+)\/(c[^/]+)\/(channel|messages)\.json$/;
 const ACTIVITY_RX = /^Activity\/(analytics|reporting|messaging|modeling)\/.+\.json$/i;
@@ -189,6 +190,7 @@ type EntryKind = {
   kind: "account-file";
   root: string;
   file: "user" | "avatar";
+  mime?: string;
 } | {
   kind: "messages-index";
   root: string;
@@ -211,12 +213,13 @@ function classifyEntry(rawName: string): EntryKind {
       file: "user"
     };
   }
-  const avatarM = AVATAR_JSON_RX.exec(name);
+  const avatarM = AVATAR_FILE_RX.exec(name);
   if (avatarM) {
     return {
       kind: "account-file",
       root: avatarM[1],
-      file: "avatar"
+      file: "avatar",
+      mime: AVATAR_PNG_RX.test(name) ? "image/png" : "image/jpeg"
     };
   }
   const chanM = CHANNEL_DIR_RX.exec(name);
@@ -454,6 +457,7 @@ interface ChannelPair {
 interface AccountRootCandidate {
   user?: Uint8Array;
   avatar?: Uint8Array;
+  avatarMime?: string;
 }
 interface MessagesRootCandidate {
   index?: Uint8Array;
@@ -557,6 +561,7 @@ async function runIngest(file: File): Promise<void> {
           if (!cand.user) cand.user = buf;
         } else if (!cand.avatar) {
           cand.avatar = buf;
+          cand.avatarMime = klass.mime ?? "image/jpeg";
         }
       }, ABORT);
       return;
@@ -714,6 +719,7 @@ async function runIngest(file: File): Promise<void> {
   const accountCand = accountCandidates.get(accountRoot)!;
   small.user = accountCand.user;
   small.avatar = accountCand.avatar;
+  const avatarMime = accountCand.avatarMime ?? "image/jpeg";
   resolveOwnerIfPossible();
   const messagesRoot = selectMessagesRoot();
   const messagesCand = messagesRoot ? messagesCandidates.get(messagesRoot) : undefined;
@@ -748,7 +754,7 @@ async function runIngest(file: File): Promise<void> {
   let ownerAvatarBlob: Blob | null = null;
   if (small.avatar) {
     ownerAvatarBlob = new Blob([small.avatar.slice().buffer], {
-      type: "image/jpeg"
+      type: avatarMime
     });
   }
   const ownerAvatarUrl = getDefaultAvatarUrl(ownerId);
