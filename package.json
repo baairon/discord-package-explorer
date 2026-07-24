@@ -1,6 +1,8 @@
 {
   "name": "package-root",
   "private": true,
+  "author": "bairon",
+  "license": "MIT",
   "scripts": {
     "setup": "npm --prefix viewer install --no-audit --no-fund",
     "dev": "npm run setup --silent && npm --prefix viewer run dev",

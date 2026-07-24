@@ -2,6 +2,8 @@
   "name": "discord-package-explorer",
   "private": true,
   "version": "0.1.0",
+  "author": "bairon",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
